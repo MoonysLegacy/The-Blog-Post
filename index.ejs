@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Blog Post</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-content">
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle Dark Mode">🌙</button>
+            <h1>The Blog Post</h1>
+            <p>Share Your Thoughts</p>
+            <div class="hero-image-stack">
+                <img src="/images/Share%20your%20Thoughts.jpg" alt="Share Your Thoughts" class="header-image">
+                <div class="hero-panel hero-panel-left">
+                    <h2>Share Your Voice Today!<br>Join Our Community!</h2>
+                </div>
+                <div class="hero-panel hero-panel-right">
+                    <p>Join our community and unleash your creativity! Our blog platform offers a space for everyone to express their thoughts, share experiences, and connect with like-minded individuals. Whether you're a seasoned writer or just starting, we provide the tools you need to publish and manage your blogs seamlessly and enjoyably.</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <section class="feature-showcase">
+            <div class="feature-text">
+                <article class="feature-item">
+                    <h2>EASY BLOG CREATION</h2>
+                    <p>Our platform allows you to quickly create and customize your blog to share your unique stories effortlessly.</p>
+                </article>
+
+                <article class="feature-item">
+                    <h2>COMMUNITY ENGAGEMENT</h2>
+                    <p>Engage with fellow bloggers, share insights, and participate in lively discussions within a supportive community.</p>
+                </article>
+
+                <article class="feature-item">
+                    <h2>SIMPLE DELETION PROCESS</h2>
+                    <p>Manage your content easily with a straightforward deletion process, ensuring you have full control over your posts.</p>
+                </article>
+            </div>
+
+            <div class="feature-image-wrap">
+                <img src="/images/Blog%20buttons.jpg" alt="Blog feature icons" class="feature-image">
+            </div>
+        </section>
+
+        <div class="search-section">
+            <input type="text" id="searchInput" placeholder="🔍 Search posts..." class="search-box">
+            <div class="sort-buttons">
+                <button class="sort-btn active" onclick="sortPosts('newest')">📅 Newest</button>
+                <button class="sort-btn" onclick="sortPosts('most-liked')">❤️ Most Liked</button>
+                <button class="sort-btn" onclick="sortPosts('most-commented')">💬 Most Commented</button>
+                <button class="sort-btn" onclick="sortPosts('most-viewed')">👀 Most Viewed</button>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h2>Write a New Post</h2>
+            <form action="/" method="POST" class="post-form">
+                <input type="text" name="title" placeholder="Post Title" required>
+                <textarea name="content" placeholder="Post Content" required></textarea>
+                <input type="url" name="imageUrl" placeholder="Featured Image URL (optional)">
+                <input type="text" name="author" placeholder="Your Name (optional)">
+                <input type="text" name="hashtags" placeholder="Hashtags (space-separated, e.g. #travel #adventure)">
+                <button type="submit" class="btn-primary">Create Post</button>
+            </form>
+        </div>
+
+        <div class="posts" id="postsList">
+            <% if (posts.length === 0) { %>
+                <div class="post">
+                    <h2>No posts yet</h2>
+                    <p>Use the form above to add your first post.</p>
+                </div>
+            <% } else { %>
+                <% posts.forEach(post => { %>
+                    <div class="post" data-title="<%= post.title.toLowerCase() %>" data-content="<%= post.content.toLowerCase() %>" data-post-id="<%= post.id %>" data-likes="<%= post.likes || 0 %>" data-comments="<%= (post.comments || []).length %>" data-views="<%= post.views || 0 %>" data-date="<%= new Date(post.date).getTime() %>">
+                        <% if (post.imageUrl) { %>
+                            <img src="<%= post.imageUrl %>" alt="<%= post.title %>" class="featured-image">
+                        <% } %>
+                        <div class="post-meta">
+                            <small><%= post.date.toLocaleDateString() %></small>
+                            <% if (post.author) { %><span class="post-author">✍️ <%= post.author %></span><% } %>
+                            <span class="reading-time">📖 <%= Math.ceil(post.content.split(' ').length / 200) %> min read</span>
+                            <span class="view-count">👀 <%= post.views || 0 %> views</span>
+                        </div>
+                        <h2><%= post.title %></h2>
+                        <% if (post.hashtags && post.hashtags.length > 0) { %>
+                            <div class="hashtags">
+                                <% post.hashtags.forEach(tag => { %>
+                                    <span class="hashtag">#<%= tag %></span>
+                                <% }); %>
+                            </div>
+                        <% } %>
+                        <p><%= post.content.substring(0, 150) %><%= post.content.length > 150 ? '...' : '' %></p>
+                        <% if (post.content.length > 150) { %>
+                            <a href="/post/<%= post.id %>" class="read-more-link">Read More →</a>
+                        <% } %>
+                        <div class="post-stats">
+                            <span class="likes">❤️ <%= post.likes || 0 %> likes</span>
+                            <span class="comments">💬 <%= (post.comments || []).length %> comments</span>
+                        </div>
+                        <div class="post-actions">
+                            <a href="/edit/<%= post.id %>">✏️ Edit</a>
+                            <form action="/like/<%= post.id %>" method="POST" class="inline-form">
+                                <button type="submit" class="like-button">❤️ Like</button>
+                            </form>
+                            <form action="/delete/<%= post.id %>" method="POST" class="inline-form" onsubmit="return confirm('Delete this post?');">
+                                <button type="submit" class="delete-button">🗑️ Delete</button>
+                            </form>
+                        </div>
+                        
+                        <% if (post.comments && post.comments.length > 0) { %>
+                            <div class="comments-section">
+                                <h4>Comments (<%= post.comments.length %>)</h4>
+                                <% post.comments.forEach(comment => { %>
+                                    <div class="comment">
+                                        <strong><%= comment.name %></strong>
+                                        <small><%= comment.date.toLocaleDateString() %></small>
+                                        <p><%= comment.text %></p>
+                                    </div>
+                                <% }); %>
+                            </div>
+                        <% } %>
+
+                        <div class="comment-form">
+                            <h4>Add a Comment</h4>
+                            <form action="/comment/<%= post.id %>" method="POST" class="add-comment-form">
+                                <input type="text" name="name" placeholder="Your Name" required>
+                                <textarea name="text" placeholder="Your Comment" required></textarea>
+                                <button type="submit" class="btn-comment">Post Comment</button>
+                            </form>
+                        </div>
+                    </div>
+                <% }); %>
+            <% } %>
+        </div>
+    </div>
+
+    <script>
+        // Dark Mode Toggle
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+            updateToggleButton();
+        }
+
+        function updateToggleButton() {
+            const btn = document.querySelector('.dark-mode-toggle');
+            if (btn) {
+                btn.textContent = document.body.classList.contains('dark-mode') ? '☀️' : '🌙';
+            }
+        }
+
+        // Load dark mode preference
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+        }
+        updateToggleButton();
+
+        // Search Functionality
+        document.getElementById('searchInput')?.addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('.post').forEach(post => {
+                const title = post.dataset.title;
+                const content = post.dataset.content;
+                if (title.includes(searchTerm) || content.includes(searchTerm)) {
+                    post.style.display = 'block';
+                } else {
+                    post.style.display = 'none';
+                }
+            });
+        });
+
+        // Sort Posts
+        function sortPosts(sortType) {
+            const posts = Array.from(document.querySelectorAll('.post'));
+            const container = document.getElementById('postsList');
+
+            posts.sort((a, b) => {
+                if (sortType === 'newest') {
+                    return b.dataset.date - a.dataset.date;
+                } else if (sortType === 'most-liked') {
+                    return parseInt(b.dataset.likes || 0) - parseInt(a.dataset.likes || 0);
+                } else if (sortType === 'most-commented') {
+                    return parseInt(b.dataset.comments || 0) - parseInt(a.dataset.comments || 0);
+                } else if (sortType === 'most-viewed') {
+                    return parseInt(b.dataset.views || 0) - parseInt(a.dataset.views || 0);
+                }
+            });
+
+            posts.forEach(post => container.appendChild(post));
+
+            // Update active button
+            document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // Track views when page loads
+        document.querySelectorAll('.post').forEach(post => {
+            const id = post.dataset.postId;
+            if (id) {
+                fetch(`/view/${id}`, { method: 'POST' }).catch(err => console.log('View tracking:', err));
+            }
+        });
+    </script>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>The Blog Post</h3>
+                <p>A modern publishing space for thoughtful stories, practical ideas, and meaningful conversations.</p>
+            </div>
+            <div class="footer-section">
+                <h3>Quick Links</h3>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="#postsList">Browse Posts</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h3>About</h3>
+                <p>Built with Node.js, Express, and EJS to deliver a clean writing, editing, and publishing experience.</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 The Blog Post. All rights reserved.</p>
+        </div>
+    </footer>
+    
+</body>
+
+</html>

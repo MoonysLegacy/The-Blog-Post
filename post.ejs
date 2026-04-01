@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= post.title %> — The Blog Post</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+    <header class="header">
+        <div class="header-content">
+            <button class="dark-mode-toggle" onclick="toggleDarkMode()" title="Toggle Dark Mode">🌙</button>
+            <h1>The Blog Post</h1>
+            <p>Share Your Thoughts</p>
+        </div>
+    </header>
+
+    <div class="container">
+        <a href="/" class="back-link">← Back to all posts</a>
+
+        <div class="post post-detail">
+            <% if (post.imageUrl) { %>
+                <img src="<%= post.imageUrl %>" alt="<%= post.title %>" class="featured-image">
+            <% } %>
+
+            <div class="post-meta">
+                <small><%= post.date.toLocaleDateString() %></small>
+                <% if (post.author) { %><span class="post-author">✍️ <%= post.author %></span><% } %>
+                <span class="reading-time">📖 <%= Math.ceil(post.content.split(' ').length / 200) %> min read</span>
+                <span class="view-count">👀 <%= post.views || 0 %> views</span>
+            </div>
+
+            <h2 class="post-detail-title"><%= post.title %></h2>
+
+            <% if (post.hashtags && post.hashtags.length > 0) { %>
+                <div class="hashtags">
+                    <% post.hashtags.forEach(tag => { %>
+                        <span class="hashtag">#<%= tag %></span>
+                    <% }); %>
+                </div>
+            <% } %>
+
+            <div class="post-full-content">
+                <%= post.content %>
+            </div>
+
+            <div class="post-stats">
+                <span class="likes">❤️ <%= post.likes || 0 %> likes</span>
+                <span class="comments">💬 <%= (post.comments || []).length %> comments</span>
+            </div>
+
+            <div class="post-actions">
+                <a href="/edit/<%= post.id %>">✏️ Edit</a>
+                <form action="/like/<%= post.id %>" method="POST" class="inline-form">
+                    <button type="submit" class="like-button">❤️ Like</button>
+                </form>
+                <form action="/delete/<%= post.id %>" method="POST" class="inline-form" onsubmit="return confirm('Delete this post?');">
+                    <button type="submit" class="delete-button">🗑️ Delete</button>
+                </form>
+            </div>
+
+            <% if (post.comments && post.comments.length > 0) { %>
+                <div class="comments-section">
+                    <h4>Comments (<%= post.comments.length %>)</h4>
+                    <% post.comments.forEach(comment => { %>
+                        <div class="comment">
+                            <strong><%= comment.name %></strong>
+                            <small><%= comment.date.toLocaleDateString() %></small>
+                            <p><%= comment.text %></p>
+                        </div>
+                    <% }); %>
+                </div>
+            <% } %>
+
+            <div class="comment-form">
+                <h4>Add a Comment</h4>
+                <form action="/comment/<%= post.id %>" method="POST" class="add-comment-form">
+                    <input type="text" name="name" placeholder="Your Name" required>
+                    <textarea name="text" placeholder="Your Comment" required></textarea>
+                    <button type="submit" class="btn-comment">Post Comment</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
+            updateToggleButton();
+        }
+
+        function updateToggleButton() {
+            const btn = document.querySelector('.dark-mode-toggle');
+            if (btn) {
+                btn.textContent = document.body.classList.contains('dark-mode') ? '☀️' : '🌙';
+            }
+        }
+
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+        }
+        updateToggleButton();
+    </script>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>The Blog Post</h3>
+                <p>A modern publishing space for thoughtful stories, practical ideas, and meaningful conversations.</p>
+            </div>
+            <div class="footer-section">
+                <h3>Quick Links</h3>
+                <ul>
+                    <li><a href="/">Home</a></li>
+                    <li><a href="/#postsList">Browse Posts</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h3>About</h3>
+                <p>Built with Node.js, Express, and EJS to deliver a clean writing, editing, and publishing experience.</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 The Blog Post. All rights reserved.</p>
+        </div>
+    </footer>
+
+</body>
+</html>
