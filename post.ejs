@@ -22,25 +22,14 @@
     <div class="container">
         <a href="/" class="back-link">← Back to all posts</a>
 
-        <form action="/set-user" method="POST" class="post-form" style="margin-bottom: 1rem;">
-            <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
-            <input type="text" name="currentUser" placeholder="Viewing as (name)" value="<%= currentUser || '' %>">
-            <button type="submit" class="btn-primary">Set Current User</button>
-        </form>
-
-        <% if (adminEnabled) { %>
-            <% if (isAdmin) { %>
-                <form action="/admin/logout" method="POST" class="post-form" style="margin-bottom: 1rem;">
-                    <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
-                    <button type="submit" class="btn-primary">Admin Logout</button>
-                </form>
-            <% } else { %>
-                <form action="/admin/login" method="POST" class="post-form" style="margin-bottom: 1rem;">
-                    <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
-                    <input type="password" name="password" placeholder="Admin password" required>
-                    <button type="submit" class="btn-primary">Admin Login</button>
-                </form>
-            <% } %>
+        <h3 style="margin: 0 0 0.5rem 0;">User Session</h3>
+        <% if (currentUser) { %>
+            <form action="/logout" method="POST" class="post-form" style="margin-bottom: 1rem;">
+                <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
+                <button type="submit" class="btn-primary">Logout (<%= currentUser %>)</button>
+            </form>
+        <% } else { %>
+            <a href="/login?next=/post/<%= post.id %>" class="back-link" style="margin-bottom: 1rem;">Login</a>
         <% } %>
 
         <div class="post post-detail">

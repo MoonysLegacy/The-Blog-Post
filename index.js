@@ -27,6 +27,15 @@ function normalizeName(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function getSafeRedirectPath(value, fallback = '/') {
+  const pathValue = String(value || '').trim();
+  if (pathValue.startsWith('/') && !pathValue.startsWith('//')) {
+    return pathValue;
+  }
+
+  return fallback;
+}
+
 function parseCookies(cookieHeader = '') {
   return cookieHeader
     .split(';')
@@ -55,11 +64,6 @@ function getOwnerId(req) {
   return (cookies.ownerId || '').trim();
 }
 
-function isAdminAuthenticated(req) {
-  const cookies = parseCookies(req.headers.cookie || '');
-  return cookies.adminAuth === '1';
-}
-
 function isPostAuthor(post, currentUser) {
   const postAuthor = normalizeName(post?.author);
   const activeUser = normalizeName(currentUser);
@@ -70,11 +74,7 @@ function isPostOwner(post, ownerId) {
   return Boolean(post?.ownerId) && Boolean(ownerId) && post.ownerId === ownerId;
 }
 
-function canManagePost(post, ownerId, currentUser, isAdmin) {
-  if (isAdmin) {
-    return true;
-  }
-
+function canManagePost(post, ownerId, currentUser) {
   return isPostOwner(post, ownerId) && isPostAuthor(post, currentUser);
 }
 
@@ -86,8 +86,8 @@ function normalizePostContent(content) {
     .replace(/\n[ \t]+/g, '\n');
 }
 
-function withPermissions(post, ownerId, currentUser, legacyClaimEnabled, isAdmin) {
-  const canManage = canManagePost(post, ownerId, currentUser, isAdmin);
+function withPermissions(post, ownerId, currentUser, legacyClaimEnabled) {
+  const canManage = canManagePost(post, ownerId, currentUser);
   const canClaimLegacy =
     !post.ownerId &&
     legacyClaimEnabled &&
@@ -155,8 +155,6 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   res.locals.currentUser = getCurrentUser(req);
   res.locals.legacyClaimEnabled = Boolean(process.env.LEGACY_CLAIM_CODE);
-  res.locals.adminEnabled = Boolean(process.env.ADMIN_PASSWORD);
-  res.locals.isAdmin = isAdminAuthenticated(req);
   const ownerId = getOwnerId(req);
 
   if (ownerId) {
@@ -171,9 +169,35 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/login', (req, res) => {
+  const nextPath = getSafeRedirectPath(req.query.next, '/');
+  res.render('login', { nextPath, loginError: '' });
+});
+
+app.post('/login', (req, res) => {
+  const currentUser = String(req.body.currentUser || '').trim();
+  const nextPath = getSafeRedirectPath(req.body.nextPath, '/');
+
+  if (!currentUser) {
+    return res.status(400).render('login', {
+      nextPath,
+      loginError: 'Please enter your author name to continue.'
+    });
+  }
+
+  res.cookie('currentUser', currentUser, { httpOnly: true, sameSite: 'lax', path: '/' });
+  return res.redirect(303, nextPath);
+});
+
+app.post('/logout', (req, res) => {
+  const redirectTo = getSafeRedirectPath(req.body.redirectTo, '/');
+  res.clearCookie('currentUser', { path: '/' });
+  return res.redirect(303, redirectTo);
+});
+
 app.post('/set-user', (req, res) => {
   const currentUser = String(req.body.currentUser || '').trim();
-  const redirectTo = req.body.redirectTo || '/';
+  const redirectTo = getSafeRedirectPath(req.body.redirectTo, '/');
 
   if (!currentUser) {
     res.clearCookie('currentUser', { path: '/' });
@@ -184,34 +208,11 @@ app.post('/set-user', (req, res) => {
   return res.redirect(303, redirectTo);
 });
 
-app.post('/admin/login', (req, res) => {
-  const password = String(req.body.password || '');
-  const redirectTo = req.body.redirectTo || '/';
-  const expectedPassword = String(process.env.ADMIN_PASSWORD || '');
-
-  if (!expectedPassword) {
-    return res.status(503).send('Admin mode is disabled.');
-  }
-
-  if (password !== expectedPassword) {
-    return res.status(403).send('Invalid admin password.');
-  }
-
-  res.cookie('adminAuth', '1', { httpOnly: true, sameSite: 'lax', path: '/' });
-  return res.redirect(303, redirectTo);
-});
-
-app.post('/admin/logout', (req, res) => {
-  const redirectTo = req.body.redirectTo || '/';
-  res.clearCookie('adminAuth', { path: '/' });
-  return res.redirect(303, redirectTo);
-});
-
 app.post('/claim-legacy/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { claimCode, redirectTo } = req.body;
   const post = posts.find(p => p.id === id);
-  const destination = redirectTo || '/';
+  const destination = getSafeRedirectPath(redirectTo, '/');
   const expectedClaimCode = String(process.env.LEGACY_CLAIM_CODE || '');
   const providedClaimCode = String(claimCode || '').trim();
 
@@ -246,8 +247,7 @@ app.get('/', (req, res) => {
       post,
       res.locals.ownerId,
       res.locals.currentUser,
-      res.locals.legacyClaimEnabled,
-      res.locals.isAdmin
+      res.locals.legacyClaimEnabled
     )
   );
 
@@ -315,8 +315,7 @@ app.get('/post/:id', (req, res) => {
       post,
       res.locals.ownerId,
       res.locals.currentUser,
-      res.locals.legacyClaimEnabled,
-      res.locals.isAdmin
+      res.locals.legacyClaimEnabled
     );
 
     res.render('post', {
@@ -336,7 +335,7 @@ app.get('/edit/:id', (req, res) => {
     return;
   }
 
-  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser)) {
     res.status(403).send('Only the author can edit this post.');
     return;
   }
@@ -353,7 +352,7 @@ app.post('/edit/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser)) {
     return res.status(403).send('Only the author can edit this post.');
   }
 
@@ -376,7 +375,7 @@ app.post('/delete/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser)) {
     return res.status(403).send('Only the author can delete this post.');
   }
 
@@ -394,7 +393,7 @@ app.get('/delete/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser)) {
     return res.status(403).send('Only the author can delete this post.');
   }
 
@@ -408,10 +407,11 @@ app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log('Available routes:');
   console.log('  GET  /');
+  console.log('  GET  /login');
+  console.log('  POST /login');
+  console.log('  POST /logout');
   console.log('  POST /');
   console.log('  POST /set-user');
-  console.log('  POST /admin/login');
-  console.log('  POST /admin/logout');
   console.log('  POST /claim-legacy/:id');
   console.log('  GET  /edit/:id');
   console.log('  POST /edit/:id');
