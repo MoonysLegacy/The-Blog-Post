@@ -22,6 +22,39 @@ const __dirname = path.dirname(__filename);
 const dataDir = path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'posts.json');
 
+function normalizeName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function parseCookies(cookieHeader = '') {
+  return cookieHeader
+    .split(';')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .reduce((acc, pair) => {
+      const [rawKey, ...rawValueParts] = pair.split('=');
+      if (!rawKey) {
+        return acc;
+      }
+
+      const key = decodeURIComponent(rawKey.trim());
+      const value = decodeURIComponent(rawValueParts.join('=').trim());
+      acc[key] = value;
+      return acc;
+    }, {});
+}
+
+function getCurrentUser(req) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  return (cookies.currentUser || '').trim();
+}
+
+function isPostAuthor(post, currentUser) {
+  const postAuthor = normalizeName(post?.author);
+  const activeUser = normalizeName(currentUser);
+  return Boolean(postAuthor) && postAuthor === activeUser;
+}
+
 function loadPosts() {
   try {
     if (!fs.existsSync(dataFile)) {
@@ -68,6 +101,27 @@ function savePosts() {
 
 loadPosts();
 
+app.use((req, res, next) => {
+  res.locals.currentUser = getCurrentUser(req);
+  next();
+});
+
+app.post('/set-user', (req, res) => {
+  const currentUser = String(req.body.currentUser || '').trim();
+  const redirectTo = req.body.redirectTo || '/';
+
+  if (!currentUser) {
+    res.setHeader('Set-Cookie', 'currentUser=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
+    return res.redirect(redirectTo);
+  }
+
+  res.setHeader(
+    'Set-Cookie',
+    `currentUser=${encodeURIComponent(currentUser)}; Path=/; HttpOnly; SameSite=Lax`
+  );
+  return res.redirect(redirectTo);
+});
+
 app.get('/', (req, res) => {
   res.render('index', { posts });
 });
@@ -75,12 +129,12 @@ app.get('/', (req, res) => {
 app.post('/', (req, res) => {
   const { title, content, imageUrl, hashtags, author } = req.body;
   if (title && content) {
-    posts.push({ 
-      id: nextId++, 
-      title, 
+    posts.push({
+      id: nextId++,
+      title,
       content,
       author: author ? author.trim() : '',
-      imageUrl: imageUrl || null, 
+      imageUrl: imageUrl || null,
       hashtags: hashtags ? hashtags.split(' ').filter(tag => tag.trim()) : [],
       date: new Date(),
       views: 0,
@@ -93,7 +147,7 @@ app.post('/', (req, res) => {
 });
 
 app.post('/like/:id', (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === id);
   if (post) {
     post.likes = (post.likes || 0) + 1;
@@ -103,7 +157,7 @@ app.post('/like/:id', (req, res) => {
 });
 
 app.post('/comment/:id', (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const { name, text } = req.body;
   const post = posts.find(p => p.id === id);
   if (post && name && text) {
@@ -115,7 +169,7 @@ app.post('/comment/:id', (req, res) => {
 });
 
 app.post('/view/:id', (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === id);
   if (post) {
     post.views = (post.views || 0) + 1;
@@ -125,7 +179,7 @@ app.post('/view/:id', (req, res) => {
 });
 
 app.get('/post/:id', (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === id);
   if (post) {
     res.render('post', { post });
@@ -135,53 +189,89 @@ app.get('/post/:id', (req, res) => {
 });
 
 app.get('/edit/:id', (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === id);
-  if (post) {
-    res.render('edit', { post });
-  } else {
+  if (!post) {
     res.status(404).send('Post not found');
+    return;
   }
+
+  if (!isPostAuthor(post, res.locals.currentUser)) {
+    res.status(403).send('Only the author can edit this post.');
+    return;
+  }
+
+  res.render('edit', { post });
 });
 
 app.post('/edit/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  const { title, content, imageUrl, hashtags, author } = req.body;
+  const id = parseInt(req.params.id, 10);
+  const { title, content, imageUrl, hashtags } = req.body;
   const post = posts.find(p => p.id === id);
-  if (post && title && content) {
+
+  if (!post) {
+    return res.status(404).send('Post not found');
+  }
+
+  if (!isPostAuthor(post, res.locals.currentUser)) {
+    return res.status(403).send('Only the author can edit this post.');
+  }
+
+  if (title && content) {
     post.title = title;
     post.content = content;
-    post.author = author ? author.trim() : '';
     post.imageUrl = imageUrl || null;
     post.hashtags = hashtags ? hashtags.split(' ').filter(tag => tag.trim()) : [];
     savePosts();
   }
+
   res.redirect('/');
 });
 
 app.post('/delete/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  console.log(`✓ Deleting post ${id}`);
+  const id = parseInt(req.params.id, 10);
+  const post = posts.find(p => p.id === id);
+
+  if (!post) {
+    return res.status(404).send('Post not found');
+  }
+
+  if (!isPostAuthor(post, res.locals.currentUser)) {
+    return res.status(403).send('Only the author can delete this post.');
+  }
+
+  console.log(`Deleting post ${id}`);
   posts = posts.filter(p => p.id !== id);
   savePosts();
-  res.redirect('/');
+  return res.redirect('/');
 });
 
 app.get('/delete/:id', (req, res) => {
-  const id = parseInt(req.params.id);
-  console.log(`✓ GET delete post ${id}`);
+  const id = parseInt(req.params.id, 10);
+  const post = posts.find(p => p.id === id);
+
+  if (!post) {
+    return res.status(404).send('Post not found');
+  }
+
+  if (!isPostAuthor(post, res.locals.currentUser)) {
+    return res.status(403).send('Only the author can delete this post.');
+  }
+
+  console.log(`GET delete post ${id}`);
   posts = posts.filter(p => p.id !== id);
   savePosts();
-  res.redirect('/');
+  return res.redirect('/');
 });
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log('Available routes:');
-  console.log('  GET  /')
-  console.log('  POST /')
-  console.log('  GET  /edit/:id')
-  console.log('  POST /edit/:id')
-  console.log('  POST /delete/:id')
-  console.log('  GET  /delete/:id')
+  console.log('  GET  /');
+  console.log('  POST /');
+  console.log('  POST /set-user');
+  console.log('  GET  /edit/:id');
+  console.log('  POST /edit/:id');
+  console.log('  POST /delete/:id');
+  console.log('  GET  /delete/:id');
 });

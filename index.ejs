@@ -53,6 +53,11 @@
         </section>
 
         <div class="search-section">
+            <form action="/set-user" method="POST" class="post-form" style="margin-bottom: 1rem;">
+                <input type="hidden" name="redirectTo" value="/">
+                <input type="text" name="currentUser" placeholder="Viewing as (name)" value="<%= currentUser || '' %>">
+                <button type="submit" class="btn-primary">Set Current User</button>
+            </form>
             <input type="text" id="searchInput" placeholder="🔍 Search posts..." class="search-box">
             <div class="sort-buttons">
                 <button class="sort-btn active" onclick="sortPosts('newest')">📅 Newest</button>
@@ -109,13 +114,17 @@
                             <span class="comments">💬 <%= (post.comments || []).length %> comments</span>
                         </div>
                         <div class="post-actions">
-                            <a href="/edit/<%= post.id %>">✏️ Edit</a>
+                            <% if (post.author && currentUser && post.author.trim().toLowerCase() === currentUser.trim().toLowerCase()) { %>
+                                <a href="/edit/<%= post.id %>">✏️ Edit</a>
+                            <% } %>
                             <form action="/like/<%= post.id %>" method="POST" class="inline-form">
                                 <button type="submit" class="like-button">❤️ Like</button>
                             </form>
-                            <form action="/delete/<%= post.id %>" method="POST" class="inline-form" onsubmit="return confirm('Delete this post?');">
-                                <button type="submit" class="delete-button">🗑️ Delete</button>
-                            </form>
+                            <% if (post.author && currentUser && post.author.trim().toLowerCase() === currentUser.trim().toLowerCase()) { %>
+                                <form action="/delete/<%= post.id %>" method="POST" class="inline-form" onsubmit="return confirm('Delete this post?');">
+                                    <button type="submit" class="delete-button">🗑️ Delete</button>
+                                </form>
+                            <% } %>
                         </div>
                         
                         <% if (post.comments && post.comments.length > 0) { %>

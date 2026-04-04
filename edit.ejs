@@ -24,7 +24,7 @@
                 <input type="text" name="title" value="<%= post.title %>" required>
                 <textarea name="content" required><%= post.content %></textarea>
                 <input type="url" name="imageUrl" placeholder="Featured Image URL (optional)" value="<%= post.imageUrl || '' %>">
-                <input type="text" name="author" placeholder="Your Name (optional)" value="<%= post.author || '' %>">
+                <input type="text" value="<%= post.author || '' %>" placeholder="Author" readonly disabled>
                 <input type="text" name="hashtags" placeholder="Hashtags (space-separated, e.g. #travel #adventure)" value="<%= (post.hashtags || []).join(' ') %>">
                 <button type="submit" class="btn-primary">Save Changes</button>
             </form>
