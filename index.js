@@ -55,8 +55,9 @@ function getOwnerId(req) {
   return (cookies.ownerId || '').trim();
 }
 
-function appendCookie(res, cookieValue) {
-  res.append('Set-Cookie', cookieValue);
+function isAdminAuthenticated(req) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  return cookies.adminAuth === '1';
 }
 
 function isPostAuthor(post, currentUser) {
@@ -67,6 +68,36 @@ function isPostAuthor(post, currentUser) {
 
 function isPostOwner(post, ownerId) {
   return Boolean(post?.ownerId) && Boolean(ownerId) && post.ownerId === ownerId;
+}
+
+function canManagePost(post, ownerId, currentUser, isAdmin) {
+  if (isAdmin) {
+    return true;
+  }
+
+  return isPostOwner(post, ownerId) && isPostAuthor(post, currentUser);
+}
+
+function normalizePostContent(content) {
+  return String(content || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/^\s+/, '')
+    .replace(/\n[ \t]+/g, '\n');
+}
+
+function withPermissions(post, ownerId, currentUser, legacyClaimEnabled, isAdmin) {
+  const canManage = canManagePost(post, ownerId, currentUser, isAdmin);
+  const canClaimLegacy =
+    !post.ownerId &&
+    legacyClaimEnabled &&
+    isPostAuthor(post, currentUser);
+
+  return {
+    ...post,
+    canManage,
+    canClaimLegacy
+  };
 }
 
 function loadPosts() {
@@ -116,8 +147,16 @@ function savePosts() {
 loadPosts();
 
 app.use((req, res, next) => {
+  // Ensure user-switch changes are reflected immediately in rendered HTML.
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
+app.use((req, res, next) => {
   res.locals.currentUser = getCurrentUser(req);
   res.locals.legacyClaimEnabled = Boolean(process.env.LEGACY_CLAIM_CODE);
+  res.locals.adminEnabled = Boolean(process.env.ADMIN_PASSWORD);
+  res.locals.isAdmin = isAdminAuthenticated(req);
   const ownerId = getOwnerId(req);
 
   if (ownerId) {
@@ -127,7 +166,7 @@ app.use((req, res, next) => {
   }
 
   const generatedOwnerId = crypto.randomUUID();
-  appendCookie(res, `ownerId=${encodeURIComponent(generatedOwnerId)}; Path=/; HttpOnly; SameSite=Lax`);
+  res.cookie('ownerId', generatedOwnerId, { httpOnly: true, sameSite: 'lax', path: '/' });
   res.locals.ownerId = generatedOwnerId;
   next();
 });
@@ -137,12 +176,35 @@ app.post('/set-user', (req, res) => {
   const redirectTo = req.body.redirectTo || '/';
 
   if (!currentUser) {
-    appendCookie(res, 'currentUser=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
-    return res.redirect(redirectTo);
+    res.clearCookie('currentUser', { path: '/' });
+    return res.redirect(303, redirectTo);
   }
 
-  appendCookie(res, `currentUser=${encodeURIComponent(currentUser)}; Path=/; HttpOnly; SameSite=Lax`);
-  return res.redirect(redirectTo);
+  res.cookie('currentUser', currentUser, { httpOnly: true, sameSite: 'lax', path: '/' });
+  return res.redirect(303, redirectTo);
+});
+
+app.post('/admin/login', (req, res) => {
+  const password = String(req.body.password || '');
+  const redirectTo = req.body.redirectTo || '/';
+  const expectedPassword = String(process.env.ADMIN_PASSWORD || '');
+
+  if (!expectedPassword) {
+    return res.status(503).send('Admin mode is disabled.');
+  }
+
+  if (password !== expectedPassword) {
+    return res.status(403).send('Invalid admin password.');
+  }
+
+  res.cookie('adminAuth', '1', { httpOnly: true, sameSite: 'lax', path: '/' });
+  return res.redirect(303, redirectTo);
+});
+
+app.post('/admin/logout', (req, res) => {
+  const redirectTo = req.body.redirectTo || '/';
+  res.clearCookie('adminAuth', { path: '/' });
+  return res.redirect(303, redirectTo);
 });
 
 app.post('/claim-legacy/:id', (req, res) => {
@@ -179,7 +241,17 @@ app.post('/claim-legacy/:id', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.render('index', { posts });
+  const postsWithPermissions = posts.map(post =>
+    withPermissions(
+      post,
+      res.locals.ownerId,
+      res.locals.currentUser,
+      res.locals.legacyClaimEnabled,
+      res.locals.isAdmin
+    )
+  );
+
+  res.render('index', { posts: postsWithPermissions });
 });
 
 app.post('/', (req, res) => {
@@ -239,7 +311,18 @@ app.get('/post/:id', (req, res) => {
   const id = parseInt(req.params.id, 10);
   const post = posts.find(p => p.id === id);
   if (post) {
-    res.render('post', { post });
+    const postWithPermissions = withPermissions(
+      post,
+      res.locals.ownerId,
+      res.locals.currentUser,
+      res.locals.legacyClaimEnabled,
+      res.locals.isAdmin
+    );
+
+    res.render('post', {
+      post: postWithPermissions,
+      displayContent: normalizePostContent(post.content)
+    });
   } else {
     res.status(404).redirect('/');
   }
@@ -253,7 +336,7 @@ app.get('/edit/:id', (req, res) => {
     return;
   }
 
-  if (!isPostOwner(post, res.locals.ownerId)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
     res.status(403).send('Only the author can edit this post.');
     return;
   }
@@ -270,7 +353,7 @@ app.post('/edit/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!isPostOwner(post, res.locals.ownerId)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
     return res.status(403).send('Only the author can edit this post.');
   }
 
@@ -293,7 +376,7 @@ app.post('/delete/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!isPostOwner(post, res.locals.ownerId)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
     return res.status(403).send('Only the author can delete this post.');
   }
 
@@ -311,7 +394,7 @@ app.get('/delete/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!isPostOwner(post, res.locals.ownerId)) {
+  if (!canManagePost(post, res.locals.ownerId, res.locals.currentUser, res.locals.isAdmin)) {
     return res.status(403).send('Only the author can delete this post.');
   }
 
@@ -327,6 +410,8 @@ app.listen(port, () => {
   console.log('  GET  /');
   console.log('  POST /');
   console.log('  POST /set-user');
+  console.log('  POST /admin/login');
+  console.log('  POST /admin/logout');
   console.log('  POST /claim-legacy/:id');
   console.log('  GET  /edit/:id');
   console.log('  POST /edit/:id');

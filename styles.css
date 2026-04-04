@@ -1040,7 +1040,7 @@ body.dark-mode .back-link:hover {
     font-size: 1.1rem;
     line-height: 1.8;
     color: #2f3f5f;
-    white-space: pre-wrap;
+    white-space: pre-line;
     margin: 20px 0;
 }
 

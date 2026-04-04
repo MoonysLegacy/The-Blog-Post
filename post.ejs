@@ -28,6 +28,21 @@
             <button type="submit" class="btn-primary">Set Current User</button>
         </form>
 
+        <% if (adminEnabled) { %>
+            <% if (isAdmin) { %>
+                <form action="/admin/logout" method="POST" class="post-form" style="margin-bottom: 1rem;">
+                    <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
+                    <button type="submit" class="btn-primary">Admin Logout</button>
+                </form>
+            <% } else { %>
+                <form action="/admin/login" method="POST" class="post-form" style="margin-bottom: 1rem;">
+                    <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
+                    <input type="password" name="password" placeholder="Admin password" required>
+                    <button type="submit" class="btn-primary">Admin Login</button>
+                </form>
+            <% } %>
+        <% } %>
+
         <div class="post post-detail">
             <% if (post.imageUrl) { %>
                 <img src="<%= post.imageUrl %>" alt="<%= post.title %>" class="featured-image">
@@ -51,7 +66,7 @@
             <% } %>
 
             <div class="post-full-content">
-                <%= post.content %>
+                <%= displayContent %>
             </div>
 
             <div class="post-stats">
@@ -60,18 +75,18 @@
             </div>
 
             <div class="post-actions">
-                <% if (post.ownerId && ownerId && post.ownerId === ownerId) { %>
+                <% if (post.canManage) { %>
                     <a href="/edit/<%= post.id %>">✏️ Edit</a>
                 <% } %>
                 <form action="/like/<%= post.id %>" method="POST" class="inline-form">
                     <button type="submit" class="like-button">❤️ Like</button>
                 </form>
-                <% if (post.ownerId && ownerId && post.ownerId === ownerId) { %>
+                <% if (post.canManage) { %>
                     <form action="/delete/<%= post.id %>" method="POST" class="inline-form" onsubmit="return confirm('Delete this post?');">
                         <button type="submit" class="delete-button">🗑️ Delete</button>
                     </form>
                 <% } %>
-                <% if (!post.ownerId && legacyClaimEnabled && post.author && currentUser && post.author.trim().toLowerCase() === currentUser.trim().toLowerCase()) { %>
+                <% if (post.canClaimLegacy) { %>
                     <form action="/claim-legacy/<%= post.id %>" method="POST" class="inline-form">
                         <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
                         <input type="password" name="claimCode" placeholder="Legacy claim code" required>
