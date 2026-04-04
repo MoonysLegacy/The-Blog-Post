@@ -60,15 +60,22 @@
             </div>
 
             <div class="post-actions">
-                <% if (post.author && currentUser && post.author.trim().toLowerCase() === currentUser.trim().toLowerCase()) { %>
+                <% if (post.ownerId && ownerId && post.ownerId === ownerId) { %>
                     <a href="/edit/<%= post.id %>">✏️ Edit</a>
                 <% } %>
                 <form action="/like/<%= post.id %>" method="POST" class="inline-form">
                     <button type="submit" class="like-button">❤️ Like</button>
                 </form>
-                <% if (post.author && currentUser && post.author.trim().toLowerCase() === currentUser.trim().toLowerCase()) { %>
+                <% if (post.ownerId && ownerId && post.ownerId === ownerId) { %>
                     <form action="/delete/<%= post.id %>" method="POST" class="inline-form" onsubmit="return confirm('Delete this post?');">
                         <button type="submit" class="delete-button">🗑️ Delete</button>
+                    </form>
+                <% } %>
+                <% if (!post.ownerId && legacyClaimEnabled && post.author && currentUser && post.author.trim().toLowerCase() === currentUser.trim().toLowerCase()) { %>
+                    <form action="/claim-legacy/<%= post.id %>" method="POST" class="inline-form">
+                        <input type="hidden" name="redirectTo" value="/post/<%= post.id %>">
+                        <input type="password" name="claimCode" placeholder="Legacy claim code" required>
+                        <button type="submit" class="btn-primary">Claim Ownership</button>
                     </form>
                 <% } %>
             </div>

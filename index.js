@@ -2,6 +2,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const app = express();
@@ -49,10 +50,23 @@ function getCurrentUser(req) {
   return (cookies.currentUser || '').trim();
 }
 
+function getOwnerId(req) {
+  const cookies = parseCookies(req.headers.cookie || '');
+  return (cookies.ownerId || '').trim();
+}
+
+function appendCookie(res, cookieValue) {
+  res.append('Set-Cookie', cookieValue);
+}
+
 function isPostAuthor(post, currentUser) {
   const postAuthor = normalizeName(post?.author);
   const activeUser = normalizeName(currentUser);
   return Boolean(postAuthor) && postAuthor === activeUser;
+}
+
+function isPostOwner(post, ownerId) {
+  return Boolean(post?.ownerId) && Boolean(ownerId) && post.ownerId === ownerId;
 }
 
 function loadPosts() {
@@ -103,6 +117,18 @@ loadPosts();
 
 app.use((req, res, next) => {
   res.locals.currentUser = getCurrentUser(req);
+  res.locals.legacyClaimEnabled = Boolean(process.env.LEGACY_CLAIM_CODE);
+  const ownerId = getOwnerId(req);
+
+  if (ownerId) {
+    res.locals.ownerId = ownerId;
+    next();
+    return;
+  }
+
+  const generatedOwnerId = crypto.randomUUID();
+  appendCookie(res, `ownerId=${encodeURIComponent(generatedOwnerId)}; Path=/; HttpOnly; SameSite=Lax`);
+  res.locals.ownerId = generatedOwnerId;
   next();
 });
 
@@ -111,15 +137,45 @@ app.post('/set-user', (req, res) => {
   const redirectTo = req.body.redirectTo || '/';
 
   if (!currentUser) {
-    res.setHeader('Set-Cookie', 'currentUser=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
+    appendCookie(res, 'currentUser=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax');
     return res.redirect(redirectTo);
   }
 
-  res.setHeader(
-    'Set-Cookie',
-    `currentUser=${encodeURIComponent(currentUser)}; Path=/; HttpOnly; SameSite=Lax`
-  );
+  appendCookie(res, `currentUser=${encodeURIComponent(currentUser)}; Path=/; HttpOnly; SameSite=Lax`);
   return res.redirect(redirectTo);
+});
+
+app.post('/claim-legacy/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { claimCode, redirectTo } = req.body;
+  const post = posts.find(p => p.id === id);
+  const destination = redirectTo || '/';
+  const expectedClaimCode = String(process.env.LEGACY_CLAIM_CODE || '');
+  const providedClaimCode = String(claimCode || '').trim();
+
+  if (!post) {
+    return res.status(404).send('Post not found');
+  }
+
+  if (post.ownerId) {
+    return res.status(400).send('Post ownership is already claimed.');
+  }
+
+  if (!expectedClaimCode) {
+    return res.status(503).send('Legacy claiming is disabled.');
+  }
+
+  if (providedClaimCode !== expectedClaimCode) {
+    return res.status(403).send('Invalid legacy claim code.');
+  }
+
+  if (!isPostAuthor(post, res.locals.currentUser)) {
+    return res.status(403).send('Only the matching legacy author can claim this post.');
+  }
+
+  post.ownerId = res.locals.ownerId;
+  savePosts();
+  return res.redirect(destination);
 });
 
 app.get('/', (req, res) => {
@@ -134,6 +190,7 @@ app.post('/', (req, res) => {
       title,
       content,
       author: author ? author.trim() : '',
+      ownerId: res.locals.ownerId || '',
       imageUrl: imageUrl || null,
       hashtags: hashtags ? hashtags.split(' ').filter(tag => tag.trim()) : [],
       date: new Date(),
@@ -196,7 +253,7 @@ app.get('/edit/:id', (req, res) => {
     return;
   }
 
-  if (!isPostAuthor(post, res.locals.currentUser)) {
+  if (!isPostOwner(post, res.locals.ownerId)) {
     res.status(403).send('Only the author can edit this post.');
     return;
   }
@@ -213,7 +270,7 @@ app.post('/edit/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!isPostAuthor(post, res.locals.currentUser)) {
+  if (!isPostOwner(post, res.locals.ownerId)) {
     return res.status(403).send('Only the author can edit this post.');
   }
 
@@ -236,7 +293,7 @@ app.post('/delete/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!isPostAuthor(post, res.locals.currentUser)) {
+  if (!isPostOwner(post, res.locals.ownerId)) {
     return res.status(403).send('Only the author can delete this post.');
   }
 
@@ -254,7 +311,7 @@ app.get('/delete/:id', (req, res) => {
     return res.status(404).send('Post not found');
   }
 
-  if (!isPostAuthor(post, res.locals.currentUser)) {
+  if (!isPostOwner(post, res.locals.ownerId)) {
     return res.status(403).send('Only the author can delete this post.');
   }
 
@@ -270,6 +327,7 @@ app.listen(port, () => {
   console.log('  GET  /');
   console.log('  POST /');
   console.log('  POST /set-user');
+  console.log('  POST /claim-legacy/:id');
   console.log('  GET  /edit/:id');
   console.log('  POST /edit/:id');
   console.log('  POST /delete/:id');
